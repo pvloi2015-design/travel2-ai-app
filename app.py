@@ -4,44 +4,64 @@ from PIL import Image
 
 # 1. Cấu hình API
 if "GOOGLE_API_KEY" not in st.secrets:
-    st.error("Chưa cấu hình API Key!")
+    st.error("Chưa cấu hình API Key trong Secrets!")
     st.stop()
 
 genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
 
-st.title("📸 Vietnam Travel AI Designer")
+st.set_page_config(page_title="Vietnam Travel AI Pro", layout="wide")
+st.title("📸 Vietnam Travel AI Pro")
 
-# 2. Giao diện
-location = st.selectbox("Nơi muốn đến:", ["Đà Lạt", "Phú Quốc", "Huế", "Hội An"])
-ratio = st.radio("Tỉ lệ:", ["9:16", "16:9"], horizontal=True)
-uploaded_file = st.file_uploader("Tải ảnh chân dung...", type=["jpg", "png", "jpeg"])
+# Khởi tạo bộ nhớ lịch sử nếu chưa có
+if "history" not in st.session_state:
+    st.session_state.history = []
 
-if uploaded_file and st.button("✨ Thiết kế ngay"):
-    img = Image.open(uploaded_file)
+# Chia giao diện thành 2 Tab
+tab1, tab2 = st.tabs(["🚀 Thiết kế mới", "📜 Lịch sử hành trình"])
+
+with tab1:
+    col1, col2 = st.columns([1, 1])
     
-    with st.spinner("Đang tìm Model phù hợp trên server..."):
-        try:
-            # TỰ ĐỘNG DÒ TÌM MODEL KHẢ DỤNG
-            available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-            
-            # Ưu tiên lấy bản Flash, nếu không có lấy bản bất kỳ hỗ trợ Vision
-            target_model = ""
-            for m in available_models:
-                if "gemini-1.5-flash" in m:
-                    target_model = m
-                    break
-            if not target_model:
-                target_model = available_models[0] # Lấy đại 1 model nếu không thấy Flash
+    with col1:
+        location = st.selectbox("Điểm đến:", ["Đà Lạt", "Phú Quốc", "Huế", "Hội An", "Sapa", "Hạ Long"])
+        ratio = st.radio("Tỉ lệ:", ["9:16 (TikTok)", "16:9 (YouTube)"], horizontal=True)
+        uploaded_file = st.file_uploader("Tải ảnh lên...", type=["jpg", "png", "jpeg"])
+        
+    if uploaded_file and st.button("✨ Bắt đầu thiết kế"):
+        img = Image.open(uploaded_file)
+        
+        with st.spinner("Đang xử lý nghệ thuật..."):
+            try:
+                # Tìm model khả dụng
+                available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+                target_model = next((m for m in available_models if "gemini-1.5-flash" in m), available_models[0])
+                model = genai.GenerativeModel(target_model)
+                
+                # Prompt yêu cầu AI viết cả tiếng Anh và tiếng Việt
+                prompt = f"""
+                Analyze the person in this image. 
+                1. Write a high-quality English image prompt to place them in {location}, Vietnam with ratio {ratio}.
+                2. After the English prompt, provide a Vietnamese translation for the user.
+                Style: Cinematic, professional photography.
+                """
+                
+                response = model.generate_content([prompt, img])
+                result_text = response.text
+                
+                # Lưu vào lịch sử
+                st.session_state.history.append({"loc": location, "res": result_text})
+                
+                with col2:
+                    st.success("Thiết kế hoàn tất!")
+                    st.markdown(result_text)
+                    
+            except Exception as e:
+                st.error(f"Lỗi: {e}")
 
-            st.info(f"Đang chạy bằng model: {target_model}")
-            
-            model = genai.GenerativeModel(target_model)
-            prompt = f"Write a high-quality image prompt to place this person in {location}, Vietnam. Ratio {ratio}."
-            
-            response = model.generate_content([prompt, img])
-            st.success("Thành công!")
-            st.code(response.text)
-            
-        except Exception as e:
-            st.error(f"Lỗi hệ thống: {e}")
-            st.info("Vui lòng kiểm tra lại API Key đã tạo trong 'New Project' chưa.")
+with tab2:
+    if st.session_state.history:
+        for item in reversed(st.session_state.history):
+            with st.expander(f"Chuyến đi đến {item['loc']}"):
+                st.write(item['res'])
+    else:
+        st.write("Bạn chưa có chuyến đi nào trong lịch sử.")
